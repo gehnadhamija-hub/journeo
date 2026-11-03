@@ -31,48 +31,67 @@ model UserPreference {
 }
 
 model Destination {
-  id                     String             @id @default(uuid())
-  name                   String
-  city                   String
-  description            String
-  historicalSignificance String?
-  category               String             // Heritage, Monument, Nature, Museum, Cultural, Religious
-  interestTags           String             // JSON string of tags
-  latitude               Float
-  longitude              Float
-  averageVisitDuration   Int                // in minutes
-  imageUrl               String
-  officialSource         String?            // e.g. "Archaeological Survey of India (ASI) & UNESCO"
-  googlePlaceId          String?
-  openingHours           String             @default("09:00 - 17:30")
-  entryFeeINR            Int                @default(0)
-  highlights             String             @default("[]") // JSON string of highlights
-  isMustVisit            Boolean            @default(false)
-  createdAt              DateTime           @default(now())
-  stops                  ItineraryStop[]
-  savedBy                SavedDestination[]
+  id                      String             @id @default(uuid())
+  destinationKey          String             @default("delhi") // Canonical key e.g. "goa", "delhi", "jaipur"
+  name                    String
+  city                    String
+  state                   String             @default("India")
+  description             String
+  historicalSignificance  String?
+  category                String             // Heritage, Nature, Spiritual, Culture, Food, Shopping, Adventure
+  subcategory             String?
+  interestTags            String             // JSON string of tags
+  latitude                Float
+  longitude               Float
+  averageVisitDuration    Int                // in minutes
+  imageUrl                String
+  imageSource             String?
+  officialSource          String?            // e.g. "Archaeological Survey of India (ASI) & UNESCO"
+  googlePlaceId           String?
+  openingHours            String             @default("09:00 - 17:30")
+  entryFeeINR             Int                @default(0)
+  highlights              String             @default("[]") // JSON string of highlights
+  isMustVisit             Boolean            @default(false)
+  bestTimeOfDay           String?            @default("morning")
+  area                    String             @default("Central")
+  isMealStop              Boolean            @default(false)
+  mealType                String?            // breakfast, lunch, cafe, dinner
+  dietaryOptions          String             @default("[]") // JSON string
+  cuisineType             String?
+  averageCostPerPersonINR Int                @default(0)
+  rating                  Float              @default(4.5)
+  ratingCount             Int                @default(5000)
+  popularityScore         Int                @default(85)
+  originalDataJson        String?            // Preserved original source data JSON
+  enrichmentJson          String?            // Journeo structured enrichment JSON
+  createdAt               DateTime           @default(now())
+  stops                   ItineraryStop[]
+  savedBy                 SavedDestination[]
 }
 
 model Trip {
-  id               String          @id @default(uuid())
-  userId           String
-  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title            String          @default("Delhi Royal Heritage Circuit")
-  destinationCity  String          @default("Delhi")
-  startDate        String
-  endDate          String
-  startingLocation String          @default("Connaught Place, Central Delhi")
-  budget           Float?
-  groupSize        Int             @default(1)
-  transportation   String          @default("cab") // walking, public, cab, bicycle
-  travelStyle      String          @default("balanced")
-  status           String          @default("UPCOMING") // UPCOMING, ONGOING, COMPLETED
-  optimizationScore Int            @default(95)
-  totalDistanceKm  Float           @default(0)
-  totalDurationMin Int             @default(0)
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  stops            ItineraryStop[]
+  id                String          @id @default(uuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title             String          @default("Delhi Royal Heritage Circuit")
+  destinationCity   String          @default("Delhi")
+  startDate         String
+  endDate           String
+  startingLocation  String          @default("Connaught Place, Central Delhi")
+  budget            Float?
+  groupSize         Int             @default(1)
+  transportation    String          @default("cab") // walking, public, cab, bicycle
+  travelStyle       String          @default("balanced")
+  status            String          @default("UPCOMING") // UPCOMING, ONGOING, COMPLETED
+  optimizationScore Int             @default(95)
+  totalDistanceKm   Float           @default(0)
+  totalDurationMin  Int             @default(0)
+  preferencesJson   String?         // Full NormalizedPreferenceProfile JSON
+  itineraryJson     String?         // Full multi-day SmartItinerary JSON
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  stops             ItineraryStop[]
+  chatMessages      ChatMessage[]
 }
 
 model ItineraryStop {
@@ -81,15 +100,27 @@ model ItineraryStop {
   trip               Trip        @relation(fields: [tripId], references: [id], onDelete: Cascade)
   destinationId      String
   destination        Destination @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  dayNumber          Int         @default(1)
   sequenceNumber     Int
   plannedArrival     String      // e.g. "09:30"
   plannedDeparture   String      // e.g. "11:30"
   visitDuration      Int         // in minutes
   visitStatus        String      @default("PENDING") // PENDING, VISITED, SKIPPED
   isMustVisit        Boolean     @default(false)
+  selectionReason    String?
   transitInstruction String?
   transitMinutes     Int         @default(15)
   distanceFromPrevKm Float       @default(3.0)
+}
+
+model ChatMessage {
+  id          String   @id @default(uuid())
+  tripId      String
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  sender      String   // "user" | "assistant"
+  messageText String
+  actionsJson String?  // JSON of structured AssistantAction[]
+  createdAt   DateTime @default(now())
 }
 
 model SavedDestination {

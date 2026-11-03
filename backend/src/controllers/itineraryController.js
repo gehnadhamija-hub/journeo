@@ -54,7 +54,10 @@ export async function generateItinerary(req, res) {
       startTime,
       availableHours: Number(availableHours) || 8,
       transportMode: effectiveTransport,
-      travelStyle: effectiveStyle
+      travelStyle: effectiveStyle,
+      interests: effectiveInterests,
+      naturalLanguagePrompt,
+      seedVariation: req.body.seedVariation || 0
     });
 
     res.json({

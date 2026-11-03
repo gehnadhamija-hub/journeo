@@ -1,307 +1,424 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import React, { useState, useMemo } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
+  resolveCanonicalDestination,
+  CanonicalDestination
+} from '../data/canonicalDestinations';
+import { INDIA_DESTINATIONS, IndiaDestination } from '../data/indiaDestinations';
+import { getPlaceReviewData } from '../data/placeReviews';
+import { MapComponent } from '../components/MapComponent';
+import { PlacePreviewModal } from '../components/PlacePreviewModal';
+import {
+  ArrowLeft,
   MapPin,
   Clock,
-  Ticket,
-  ShieldCheck,
   Star,
-  Bookmark,
-  Share2,
-  ArrowLeft,
-  Sparkles,
-  BookOpen,
   Compass,
-  ArrowRight
+  Calendar,
+  Sun,
+  IndianRupee,
+  Sparkles,
+  CheckCircle2,
+  Eye,
+  Info
 } from 'lucide-react';
-import { api } from '../services/api';
-import { useAuth } from '../context/AuthContext';
-import { MapComponent } from '../components/MapComponent';
 
 export const DestinationDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [previewPlace, setPreviewPlace] = useState<IndiaDestination | null>(null);
 
-  const [destination, setDestination] = useState<any>(null);
-  const [similar, setSimilar] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saved, setSaved] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!id) return;
-    setLoading(true);
-    api.getDestinationById(id).then(data => {
-      setDestination(data.destination);
-      setSimilar(data.similarDestinations || []);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+  // Resolve whether :id is a Canonical City Destination (e.g. "goa") or an Individual Place ID (e.g. "goa_fort_aguada")
+  const resolved = useMemo(() => {
+    if (!id) return { canonical: null, matchedPlace: null };
+    const directPlace = INDIA_DESTINATIONS.find(
+      p => p.id.toLowerCase() === id.toLowerCase() || p.providerPlaceId === id
+    );
+    if (directPlace) {
+      const canon = resolveCanonicalDestination(directPlace.destinationId || directPlace.city);
+      return { canonical: canon, matchedPlace: directPlace };
+    }
+    const canon = resolveCanonicalDestination(id);
+    return { canonical: canon, matchedPlace: null };
   }, [id]);
 
-  const handleToggleSave = async () => {
-    if (!user) {
-      alert('Please log in to save this destination to your profile.');
-      return;
-    }
-    if (!id) return;
-    try {
-      const res = await api.toggleSaveDestination(id);
-      setSaved(res.saved);
-      setNotice(res.message);
-      setTimeout(() => setNotice(null), 3000);
-    } catch (err: any) {
-      alert(err.message || 'Error saving destination');
-    }
-  };
+  const canonical: CanonicalDestination | null = resolved.canonical;
 
-  if (loading) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 py-20 text-center text-xs text-text-muted">
-        Loading monument details and historical citations...
-      </div>
+  const destinationPlaces = useMemo(() => {
+    if (!canonical) return [];
+    return INDIA_DESTINATIONS.filter(
+      p =>
+        p.destinationId === canonical.destinationId ||
+        p.city.toLowerCase() === canonical.destinationName.toLowerCase()
     );
-  }
+  }, [canonical]);
 
-  if (!destination) {
+  const placeCategories = useMemo(() => {
+    const cats = new Set<string>(['All']);
+    destinationPlaces.forEach(p => cats.add(p.category));
+    return Array.from(cats);
+  }, [destinationPlaces]);
+
+  const filteredPlaces = useMemo(() => {
+    if (selectedCategory === 'All') return destinationPlaces;
+    return destinationPlaces.filter(p => p.category === selectedCategory);
+  }, [destinationPlaces, selectedCategory]);
+
+  const mapMarkers = useMemo(() => {
+    return filteredPlaces.map((p, idx) => ({
+      id: p.id,
+      lat: p.latitude,
+      lng: p.longitude,
+      title: p.name,
+      order: idx + 1,
+      isMustVisit: p.isMustVisit,
+      isMealStop: p.isMealStop,
+      imageUrl: p.imageUrl,
+      description: p.description
+    }));
+  }, [filteredPlaces]);
+
+  if (!canonical) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-20 text-center space-y-4">
-        <h2 className="font-serif text-2xl font-bold text-text">Destination Not Found</h2>
-        <Link to="/destinations" className="text-xs text-deep-green font-bold underline">
-          Return to Destinations
+      <div className="min-h-screen pt-32 px-4 text-center max-w-lg mx-auto">
+        <h2 className="text-2xl font-serif font-bold text-charcoal mb-3">
+          Destination Not Found
+        </h2>
+        <p className="text-stone-500 mb-6 text-sm">
+          We couldn’t find "{id}" in our verified Indian destination catalog. Browse our 10 canonical travel hubs below.
+        </p>
+        <Link
+          to="/destinations"
+          className="bg-deep-green text-white px-6 py-3 rounded-2xl text-sm font-medium inline-flex items-center gap-2"
+        >
+          <ArrowLeft className="w-4 h-4" /> Browse All Destinations
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Back button */}
-      <div className="flex items-center justify-between">
+    <div className="min-h-screen pt-24 pb-24 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
         <button
-          onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-text-muted hover:text-text transition-colors"
+          onClick={() => navigate('/destinations')}
+          className="inline-flex items-center gap-2 text-sm font-medium text-stone-500 hover:text-charcoal transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back</span>
+          <ArrowLeft className="w-4 h-4" /> All Destinations
         </button>
 
-        <div className="flex items-center gap-2">
+        <Link
+          to={`/explore?destination=${encodeURIComponent(canonical.destinationName)}`}
+          className="text-xs font-bold text-deep-green hover:text-terracotta underline"
+        >
+          Explore All {canonical.destinationName} Places & Cafes →
+        </Link>
+      </div>
+
+      {/* Hero Banner */}
+      <div className="relative h-[360px] sm:h-[420px] rounded-[36px] overflow-hidden shadow-xl mb-10 border border-stone-200/60">
+        <img
+          src={canonical.heroImageUrl}
+          alt={canonical.destinationName}
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#141F18]/90 via-[#141F18]/40 to-transparent" />
+
+        <div className="absolute top-6 left-6 flex flex-wrap gap-2">
+          {canonical.categories.map(cat => (
+            <span
+              key={cat}
+              className="px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-md text-xs font-bold uppercase tracking-wider text-deep-green shadow-sm"
+            >
+              {cat}
+            </span>
+          ))}
+        </div>
+
+        <div className="absolute bottom-8 left-8 right-8 flex flex-col md:flex-row md:items-end justify-between gap-6 text-white">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2 text-amber-300 text-xs font-bold uppercase tracking-widest mb-2">
+              <MapPin className="w-4 h-4" />
+              {canonical.state}, {canonical.country}
+            </div>
+            <h1 className="text-4xl sm:text-6xl font-serif font-bold tracking-tight mb-2">
+              {canonical.destinationName}
+            </h1>
+            <p className="text-stone-200 text-sm sm:text-base font-medium">
+              {canonical.tagline}
+            </p>
+          </div>
+
           <button
-            onClick={handleToggleSave}
-            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-              saved
-                ? 'bg-terracotta text-white border-terracotta'
-                : 'bg-white border-border text-text hover:bg-ivory'
-            }`}
+            type="button"
+            onClick={() =>
+              navigate(`/plan?destination=${encodeURIComponent(canonical.destinationName)}`)
+            }
+            className="bg-terracotta hover:bg-terracotta/95 text-white px-7 py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2.5 shadow-lg transition-all shrink-0"
           >
-            <Bookmark className={`w-3.5 h-3.5 ${saved ? 'fill-current' : ''}`} />
-            <span>{saved ? 'Saved' : 'Save to Favorites'}</span>
+            <Compass className="w-5 h-5" />
+            Plan a Trip to {canonical.destinationName}
           </button>
         </div>
       </div>
 
-      {notice && (
-        <div className="bg-deep-green text-white text-xs font-semibold py-2 px-4 rounded-xl text-center shadow-sm">
-          {notice}
+      {/* Highlighted Place Banner if navigated via /destinations/:placeId */}
+      {resolved.matchedPlace && (
+        <div className="mb-10 bg-amber-50/90 border border-amber-200 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-200/70 px-2.5 py-1 rounded-full">
+              Selected Place Highlight
+            </span>
+            <h3 className="text-xl font-serif font-bold text-charcoal mt-2">
+              {resolved.matchedPlace.name}
+            </h3>
+            <p className="text-xs text-stone-600 mt-1 max-w-2xl">
+              {resolved.matchedPlace.description}
+            </p>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              onClick={() => setPreviewPlace(resolved.matchedPlace)}
+              className="px-4 py-2.5 rounded-xl bg-white border border-amber-300 text-charcoal text-xs font-bold"
+            >
+              View Reviews & Details
+            </button>
+            <button
+              onClick={() =>
+                navigate(
+                  `/plan?destination=${encodeURIComponent(canonical.destinationName)}&placeId=${encodeURIComponent(resolved.matchedPlace!.id)}`
+                )
+              }
+              className="px-4 py-2.5 rounded-xl bg-deep-green text-white text-xs font-bold"
+            >
+              Plan Trip With This Stop
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Hero Visual Section */}
-      <div className="relative h-80 sm:h-[420px] rounded-3xl overflow-hidden border border-border shadow-soft-lg">
-        <img
-          src={destination.imageUrl}
-          alt={destination.name}
-          className="w-full h-full object-cover"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#223325]/85 via-black/20 to-transparent" />
-
-        <div className="absolute bottom-6 left-6 right-6 text-white space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 backdrop-blur-md px-2.5 py-1 rounded-md">
-              {destination.city}
+      {/* Overview, Key Metrics & Travel Tips */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-14">
+        <div className="lg:col-span-7 bg-white rounded-3xl p-7 sm:p-8 border border-stone-200/80 shadow-xs space-y-6">
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-sage block mb-1">
+              Destination Overview
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-wider bg-terracotta px-2.5 py-1 rounded-md">
-              {destination.category}
-            </span>
-            {destination.isMustVisit && (
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-gold text-white px-2.5 py-1 rounded-md flex items-center gap-1">
-                <Star className="w-3 h-3 fill-current" /> Must Visit Landmark
-              </span>
-            )}
+            <h2 className="text-2xl font-serif font-bold text-charcoal mb-3">
+              About {canonical.destinationName}
+            </h2>
+            <p className="text-stone-600 text-sm sm:text-base leading-relaxed">
+              {canonical.overview}
+            </p>
           </div>
 
-          <h1 className="font-serif text-3xl sm:text-4xl font-bold tracking-tight text-white">
-            {destination.name}
-          </h1>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2">
+            <div className="p-4 rounded-2xl bg-[#F7F4EA]/70 border border-stone-200/60">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-sage" /> Recommended Stay
+              </span>
+              <span className="text-sm font-bold text-charcoal mt-1 block">
+                {canonical.recommendedDurationDays}
+              </span>
+            </div>
+            <div className="p-4 rounded-2xl bg-[#F7F4EA]/70 border border-stone-200/60">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
+                <Sun className="w-3.5 h-3.5 text-amber-500" /> Best Season
+              </span>
+              <span className="text-sm font-bold text-charcoal mt-1 block">
+                {canonical.bestTimeToVisit}
+              </span>
+            </div>
+            <div className="p-4 rounded-2xl bg-[#F7F4EA]/70 border border-stone-200/60">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-terracotta" /> Key Zones
+              </span>
+              <span className="text-xs font-bold text-charcoal mt-1 block">
+                {canonical.popularAreas.join(' • ')}
+              </span>
+            </div>
+          </div>
 
-          <p className="text-xs sm:text-sm text-ivory/90 max-w-2xl font-light">
-            Verified data provided by {destination.officialSource || 'Archaeological Survey of India & UNESCO World Heritage'}.
-          </p>
-        </div>
-      </div>
-
-      {/* 2-Column Content Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column (8 cols): Description, Story, Highlights */}
-        <div className="lg:col-span-8 space-y-8">
-          {/* Overview Card */}
-          <div className="bg-white rounded-3xl border border-border p-7 shadow-soft-sm space-y-4">
-            <h2 className="font-serif text-xl font-bold text-text">
-              Architectural Overview & Highlights
-            </h2>
-            <p className="text-xs sm:text-sm text-text-muted leading-relaxed font-sans">
-              {destination.description}
-            </p>
-
-            {/* Interest Tags */}
-            <div className="flex items-center gap-2 flex-wrap pt-2">
-              {(destination.interestTags || []).map((tag: string) => (
-                <span
-                  key={tag}
-                  className="text-xs font-semibold bg-ivory text-text-muted px-3 py-1 rounded-full border border-border"
+          {/* Local Travel Tips */}
+          <div className="pt-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 flex items-center gap-1.5 mb-3">
+              <Info className="w-3.5 h-3.5 text-sage" /> Practical Travel & Route Planning Tips
+            </h3>
+            <div className="space-y-2.5">
+              {canonical.travelTips.map((tip, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-start gap-2.5 text-xs sm:text-sm text-stone-600 bg-stone-50/90 p-3 rounded-xl border border-stone-200/50"
                 >
-                  {tag}
-                </span>
+                  <CheckCircle2 className="w-4 h-4 text-sage shrink-0 mt-0.5" />
+                  <span>{tip}</span>
+                </div>
               ))}
             </div>
           </div>
+        </div>
 
-          {/* Dedicated Section: Discover Its Story (Section 12 requirement) */}
-          <div className="bg-[#F1F0E6] rounded-3xl border border-border p-7 shadow-soft-sm space-y-3">
-            <div className="flex items-center gap-2 text-deep-green font-bold text-xs uppercase tracking-wider">
-              <BookOpen className="w-4 h-4 text-terracotta" />
-              <span>Discover Its Story — Historical Significance</span>
-            </div>
-            <h3 className="font-serif text-xl font-bold text-text">
-              Royal Heritage & Cultural Context
-            </h3>
-            <p className="text-xs sm:text-sm text-text leading-relaxed font-serif italic text-[#344B3C]">
-              "{destination.historicalSignificance || destination.description}"
-            </p>
-            <div className="pt-2 flex items-center gap-1.5 text-xs text-text-subtle">
-              <ShieldCheck className="w-4 h-4 text-deep-green" />
-              <span>Citation: {destination.officialSource || 'Archaeological Survey of India (ASI)'}</span>
-            </div>
-          </div>
-
-          {/* Highlights List */}
-          {destination.highlights && destination.highlights.length > 0 && (
-            <div className="bg-white rounded-3xl border border-border p-7 shadow-soft-sm space-y-4">
-              <h3 className="font-serif text-lg font-bold text-text">
-                Notable Architectural Highlights
+        {/* Interactive Destination Map */}
+        <div className="lg:col-span-5 bg-white rounded-3xl p-5 border border-stone-200/80 shadow-xs flex flex-col">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <div>
+              <h3 className="text-base font-serif font-bold text-charcoal">
+                {canonical.destinationName} Geographic Map
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {destination.highlights.map((h: string, idx: number) => (
-                  <div key={idx} className="bg-ivory p-3 rounded-xl border border-border text-xs text-text flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-sage/20 text-deep-green flex items-center justify-center font-bold text-[10px]">
-                      {idx + 1}
-                    </span>
-                    <span className="font-semibold">{h}</span>
-                  </div>
-                ))}
-              </div>
+              <p className="text-xs text-stone-400">
+                Showing {filteredPlaces.length} verified landmarks & dining stops
+              </p>
             </div>
-          )}
-
-          {/* Location on Map */}
-          <div className="bg-white rounded-3xl border border-border p-6 shadow-soft-sm space-y-3">
-            <h3 className="font-serif text-lg font-bold text-text flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-terracotta" />
-              <span>Geographic Location</span>
-            </h3>
+            <span className="text-[11px] font-mono text-stone-400">
+              {canonical.center.lat.toFixed(2)}°N, {canonical.center.lng.toFixed(2)}°E
+            </span>
+          </div>
+          <div className="flex-1 min-h-[300px] rounded-2xl overflow-hidden">
             <MapComponent
-              markers={[{
-                id: destination.id,
-                lat: destination.latitude,
-                lng: destination.longitude,
-                title: destination.name,
-                order: 1,
-                isMustVisit: destination.isMustVisit
-              }]}
-              center={[destination.latitude, destination.longitude]}
-              zoom={14}
-              height="350px"
+              markers={mapMarkers}
+              height="340px"
               showRoute={false}
+              onMarkerClick={m => {
+                const found = filteredPlaces.find(p => p.id === m.id);
+                if (found) setPreviewPlace(found);
+              }}
             />
           </div>
         </div>
+      </div>
 
-        {/* Right Column (4 cols): Quick Facts, Add to Trip */}
-        <div className="lg:col-span-4 space-y-6 sticky top-24">
-          <div className="bg-white rounded-3xl border border-border p-6 shadow-soft-sm space-y-5">
-            <h3 className="font-serif font-bold text-lg text-text">
-              Visiting Details
-            </h3>
-
-            <div className="space-y-3 text-xs">
-              <div className="bg-ivory p-3 rounded-xl border border-border flex items-center gap-3">
-                <Clock className="w-4 h-4 text-deep-green flex-shrink-0" />
-                <div>
-                  <div className="text-text-subtle text-[11px]">Visiting Hours</div>
-                  <div className="font-semibold text-text">{destination.openingHours}</div>
-                </div>
-              </div>
-
-              <div className="bg-ivory p-3 rounded-xl border border-border flex items-center gap-3">
-                <Ticket className="w-4 h-4 text-terracotta flex-shrink-0" />
-                <div>
-                  <div className="text-text-subtle text-[11px]">Entry Ticket (ASI)</div>
-                  <div className="font-semibold text-text">
-                    {destination.entryFeeINR === 0 ? 'Free Entry' : `₹${destination.entryFeeINR} per visitor`}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-ivory p-3 rounded-xl border border-border flex items-center gap-3">
-                <Compass className="w-4 h-4 text-sage flex-shrink-0" />
-                <div>
-                  <div className="text-text-subtle text-[11px]">Recommended Dwell Time</div>
-                  <div className="font-semibold text-text">{destination.averageVisitDuration} minutes</div>
-                </div>
-              </div>
-            </div>
-
-            <Link
-              to="/plan"
-              className="w-full py-3 bg-deep-green hover:bg-deep-green-dark text-white rounded-xl text-xs font-bold transition-all shadow-soft-sm flex items-center justify-center gap-2"
-            >
-              <Sparkles className="w-4 h-4 text-sage-light" />
-              <span>Add to New Itinerary</span>
-            </Link>
+      {/* Places to Visit Section */}
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-serif font-bold text-charcoal">
+              Verified Places to Visit in {canonical.destinationName}
+            </h2>
+            <p className="text-sm text-stone-500">
+              Click any place to inspect Google review insights, opening hours, entry fees, or include it in your trip.
+            </p>
           </div>
 
-          {/* Similar Nearby Destinations */}
-          {similar.length > 0 && (
-            <div className="bg-white rounded-3xl border border-border p-6 shadow-soft-sm space-y-4">
-              <h3 className="font-serif font-bold text-base text-text">
-                Similar Nearby Destinations
-              </h3>
-              <div className="space-y-3">
-                {similar.map(s => (
-                  <Link
-                    key={s.id}
-                    to={`/destinations/${s.id}`}
-                    className="flex items-center gap-3 p-2 rounded-xl hover:bg-ivory transition-colors group"
+          {/* Category Filter */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {placeCategories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                  selectedCategory === cat
+                    ? 'bg-deep-green text-white'
+                    : 'bg-white text-stone-600 border border-stone-200/80 hover:border-sage'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredPlaces.map(place => {
+            const rev = getPlaceReviewData(place);
+            return (
+              <div
+                key={place.id}
+                className="bg-white rounded-[26px] overflow-hidden border border-stone-200/80 hover:border-sage/60 shadow-xs hover:shadow-lg transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div
+                    className="relative h-48 overflow-hidden cursor-pointer"
+                    onClick={() => setPreviewPlace(place)}
                   >
                     <img
-                      src={s.imageUrl}
-                      alt={s.name}
-                      className="w-12 h-12 rounded-lg object-cover border border-border flex-shrink-0"
+                      src={place.imageUrl}
+                      alt={place.name}
+                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-500"
                     />
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-serif font-bold text-xs text-text truncate group-hover:text-deep-green">
-                        {s.name}
-                      </h4>
-                      <div className="text-[10px] text-text-subtle">{s.city} • {s.averageVisitDuration}m</div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+
+                    <div className="absolute top-3 left-3 flex gap-1.5">
+                      <span className="px-2.5 py-1 rounded-full bg-white/90 text-[10px] font-bold uppercase tracking-wider text-deep-green">
+                        {place.category}
+                      </span>
+                      {place.isMustVisit && (
+                        <span className="px-2.5 py-1 rounded-full bg-amber-400 text-[#221F1B] text-[10px] font-bold uppercase tracking-wider">
+                          Must-Visit
+                        </span>
+                      )}
                     </div>
-                  </Link>
-                ))}
+
+                    {rev.available && (
+                      <div className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-white text-xs font-bold flex items-center gap-1">
+                        <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                        {rev.averageRating.toFixed(1)}
+                      </div>
+                    )}
+
+                    <div className="absolute bottom-3 left-3.5 right-3.5 text-white">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 block">
+                        {place.area}
+                      </span>
+                      <h3 className="text-lg font-serif font-bold leading-snug">
+                        {place.name}
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="p-5 space-y-3">
+                    <p className="text-xs text-stone-600 line-clamp-2 leading-relaxed">
+                      {place.description}
+                    </p>
+
+                    <div className="flex items-center justify-between text-xs text-stone-500 pt-2 border-t border-stone-100">
+                      <span className="flex items-center gap-1 font-medium">
+                        <Clock className="w-3.5 h-3.5 text-sage" />
+                        {place.averageVisitDuration} mins
+                      </span>
+                      <span className="flex items-center gap-0.5 font-bold text-charcoal">
+                        <IndianRupee className="w-3 h-3 text-terracotta" />
+                        {place.isMealStop
+                          ? `₹${place.averageCostPerPersonINR || 400} avg`
+                          : place.entryFeeINR === 0
+                          ? 'Free Entry'
+                          : `₹${place.entryFeeINR}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-5 pb-5 pt-1 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPlace(place)}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-stone-100 hover:bg-stone-200/80 text-charcoal text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Preview & Reviews
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate(
+                        `/plan?destination=${encodeURIComponent(canonical.destinationName)}&placeId=${encodeURIComponent(place.id)}`
+                      )
+                    }
+                    className="py-2.5 px-3.5 rounded-xl bg-deep-green hover:bg-deep-green/90 text-white text-xs font-bold transition-colors"
+                  >
+                    Plan With Stop
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })}
         </div>
       </div>
+
+      {/* Place Preview Modal */}
+      <PlacePreviewModal
+        place={previewPlace}
+        onClose={() => setPreviewPlace(null)}
+      />
     </div>
   );
 };

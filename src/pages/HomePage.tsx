@@ -12,10 +12,13 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { TravelGlobe } from '../components/TravelGlobe';
 import { AuthCard } from '../components/AuthCard';
+import { InteractiveGlobe3D } from '../components/InteractiveGlobe3D';
+import { useUserVisitedPlaces } from '../hooks/useUserVisitedPlaces';
 
 export const HomePage: React.FC = () => {
   const { user, isAuthModalOpen, authModalMode, openAuthModal, closeAuthModal } = useAuth();
   const navigate = useNavigate();
+  const { isAuthenticated, summary } = useUserVisitedPlaces();
 
   const handleStartPlanning = (e: React.MouseEvent) => {
     if (!user) {
@@ -129,10 +132,30 @@ export const HomePage: React.FC = () => {
           </div>
 
           {/* -------------------------------------------------------------------
-              RIGHT COLUMN — 3D Earth Globe (Proportionately resized)
+              RIGHT COLUMN — 3D Earth Globe
+              Signed-in users see their personalized travel-history globe (visited places);
+              guests see the rotating showcase globe with the sign-up call to action.
               ------------------------------------------------------------------- */}
           <div className="lg:col-span-5 flex justify-center lg:justify-end items-center w-full">
-            <TravelGlobe />
+            {isAuthenticated ? (
+              <div className="w-full bg-black/35 backdrop-blur-md rounded-3xl p-4 border border-white/15 shadow-2xl space-y-3">
+                <InteractiveGlobe3D />
+                <div className="flex items-center justify-between text-xs text-white/85 px-1">
+                  <span>
+                    {summary.uniquePlacesCount} unique places across {summary.uniqueCitiesCount} cities
+                  </span>
+                  <Link
+                    to="/my-trips"
+                    className="px-3.5 py-1.5 bg-[#193D2D] hover:bg-[#174B38] text-white font-semibold rounded-lg flex items-center gap-1.5"
+                  >
+                    <span>My Travel Log</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-[#C5A36A]" />
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <TravelGlobe />
+            )}
           </div>
         </div>
       </section>

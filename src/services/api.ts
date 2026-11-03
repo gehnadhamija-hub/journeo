@@ -1,4 +1,8 @@
-const API_BASE = 'http://localhost:5000/api';
+/// <reference types="vite/client" />
+import { supabase } from '../lib/supabaseClient';
+
+// NOTE: The backend API is still used for AI / replanner endpoints.
+const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api';
 
 function getAuthHeaders() {
   const token = localStorage.getItem('journeo_token');

@@ -12,6 +12,9 @@ export interface MapMarker {
   imageUrl?: string;
   description?: string;
   timing?: string;
+  isMealStop?: boolean;
+  mealType?: 'breakfast' | 'lunch' | 'cafe' | 'dinner';
+  cuisineType?: string;
 }
 
 interface MapComponentProps {
@@ -26,7 +29,7 @@ interface MapComponentProps {
 
 export const MapComponent: React.FC<MapComponentProps> = ({
   markers,
-  center = [28.6139, 77.2200],
+  center,
   zoom = 12,
   showRoute = true,
   selectedMarkerId,
@@ -37,23 +40,43 @@ export const MapComponent: React.FC<MapComponentProps> = ({
   const mapRef = useRef<L.Map | null>(null);
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
   const polylineRef = useRef<L.Polyline | null>(null);
+  const markerInstancesRef = useRef<Map<string, L.Marker>>(new Map());
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    if (mapRef.current) return;
+    if (!containerRef.current || mapRef.current) return;
 
-    // CartoDB Voyager clean editorial map tiles
+    // Determine initial center from markers if available
+    const initialCenter: [number, number] =
+      center ||
+      (markers.length > 0 ? [markers[0].lat, markers[0].lng] : [15.2993, 74.1240]);
+
     const map = L.map(containerRef.current, {
-      center,
+      center: initialCenter,
       zoom,
       scrollWheelZoom: true
     });
     mapRef.current = map;
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://carto.com/">CartoDB</a> contributors',
-      maxZoom: 19
-    }).addTo(map);
+    // Detect MapTiler API Key from environment
+    const maptilerKey =
+      (typeof import.meta !== 'undefined' && import.meta.env &&
+        (import.meta.env.VITE_MAPTILER_API_KEY || import.meta.env.VITE_GOOGLE_MAPS_API_KEY)) || '';
+
+    if (maptilerKey && maptilerKey.length > 6) {
+      // MapTiler High-Resolution Streets Tile Layer
+      L.tileLayer(`https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${maptilerKey}`, {
+        attribution:
+          '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+        crossOrigin: true
+      }).addTo(map);
+    } else {
+      // CartoDB Voyager clean editorial fallback
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://carto.com/">CartoDB</a> contributors',
+        maxZoom: 19
+      }).addTo(map);
+    }
 
     const layer = L.layerGroup().addTo(map);
     markerLayerRef.current = layer;
@@ -61,6 +84,7 @@ export const MapComponent: React.FC<MapComponentProps> = ({
     return () => {
       map.remove();
       mapRef.current = null;
+      markerInstancesRef.current.clear();
     };
   }, []);
 
@@ -70,6 +94,8 @@ export const MapComponent: React.FC<MapComponentProps> = ({
     if (!map || !layer) return;
 
     layer.clearLayers();
+    markerInstancesRef.current.clear();
+
     if (polylineRef.current) {
       map.removeLayer(polylineRef.current);
       polylineRef.current = null;
@@ -84,12 +110,14 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       const isSelected = m.id === selectedMarkerId;
 
       let markerBg = '#344B38'; // deep green default
+      if (m.isMealStop) markerBg = '#D97706'; // amber for food/cafe
       if (m.isMustVisit) markerBg = '#C87950'; // terracotta accent
       if (m.status === 'VISITED') markerBg = '#2E7D32'; // green
       if (m.status === 'SKIPPED') markerBg = '#9E9E9E'; // grey
-      if (isSelected) markerBg = '#87977B'; // sage highlight
+      if (isSelected) markerBg = '#1E3A2F'; // dark emerald highlight
 
-      const size = isSelected ? 34 : 28;
+      const size = isSelected ? 36 : 30;
+      const markerSymbol = m.isMealStop ? (m.mealType === 'breakfast' || m.mealType === 'cafe' ? '☕' : '🍽️') : (m.order !== undefined ? m.order : '•');
 
       const icon = L.divIcon({
         className: 'journeo-map-pin',
@@ -103,14 +131,15 @@ export const MapComponent: React.FC<MapComponentProps> = ({
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'Inter', sans-serif;
+            font-family: 'Inter', -apple-system, sans-serif;
             font-weight: 700;
-            font-size: ${isSelected ? 14 : 12}px;
-            border: 2px solid #FFFFFF;
-            box-shadow: 0 4px 10px rgba(48,47,41,0.3);
-            transition: transform 0.2s;
+            font-size: ${m.isMealStop ? 14 : isSelected ? 13 : 12}px;
+            border: 2.5px solid #FFFFFF;
+            box-shadow: 0 4px 12px rgba(48,47,41,0.35);
+            transition: all 0.2s ease-in-out;
+            ${isSelected ? 'transform: scale(1.15); box-shadow: 0 0 0 4px rgba(135,151,123,0.5);' : ''}
           ">
-            ${m.order !== undefined ? m.order : '•'}
+            ${markerSymbol}
           </div>
         `,
         iconSize: [size, size],
@@ -120,14 +149,14 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       const leafletMarker = L.marker([m.lat, m.lng], { icon });
 
       leafletMarker.bindPopup(`
-        <div style="font-family: 'Inter', sans-serif; width: 220px; padding: 4px;">
-          ${m.order ? `<div style="font-size: 10px; font-weight: 700; color: #49634F; text-transform: uppercase;">Stop ${m.order} ${m.isMustVisit ? '• Must Visit' : ''}</div>` : ''}
-          <div style="font-family: 'Playfair Display', serif; font-weight: 700; font-size: 14px; color: #344B3C; margin-top: 2px;">
+        <div style="font-family: 'Inter', -apple-system, sans-serif; width: 230px; padding: 4px;">
+          ${m.isMealStop ? `<div style="font-size: 10px; font-weight: 700; color: #D97706; text-transform: uppercase;">🍽️ Food Break • ${m.cuisineType || 'Local Gastronomy'}</div>` : m.order ? `<div style="font-size: 10px; font-weight: 700; color: #49634F; text-transform: uppercase;">Stop ${m.order} ${m.isMustVisit ? '• Must Visit' : ''}</div>` : ''}
+          <div style="font-family: 'Playfair Display', Georgia, serif; font-weight: 700; font-size: 14px; color: #344B3C; margin-top: 3px; line-height: 1.2;">
             ${m.title}
           </div>
-          ${m.timing ? `<div style="font-size: 11px; color: #667363; margin-top: 2px;">⏰ ${m.timing}</div>` : ''}
-          ${m.imageUrl ? `<img src="${m.imageUrl}" style="width: 100%; height: 85px; object-fit: cover; border-radius: 6px; margin-top: 6px;" />` : ''}
-          ${m.description ? `<p style="font-size: 11px; color: #667363; margin: 6px 0 0; line-height: 1.3;">${m.description.slice(0, 100)}...</p>` : ''}
+          ${m.timing ? `<div style="font-size: 11px; color: #667363; margin-top: 3px; font-weight: 600;">⏰ ${m.timing}</div>` : ''}
+          ${m.imageUrl ? `<img src="${m.imageUrl}" style="width: 100%; height: 90px; object-fit: cover; border-radius: 8px; margin-top: 6px; border: 1px solid #E8E5DA;" />` : ''}
+          ${m.description ? `<p style="font-size: 11px; color: #667363; margin: 6px 0 0; line-height: 1.35;">${m.description.slice(0, 110)}...</p>` : ''}
         </div>
       `);
 
@@ -136,8 +165,10 @@ export const MapComponent: React.FC<MapComponentProps> = ({
       });
 
       layer.addLayer(leafletMarker);
+      markerInstancesRef.current.set(m.id, leafletMarker);
     });
 
+    // Chronological Route Line
     if (showRoute && latLngs.length > 1) {
       const poly = L.polyline(latLngs, {
         color: '#C87950',
@@ -146,18 +177,29 @@ export const MapComponent: React.FC<MapComponentProps> = ({
         dashArray: '6, 6'
       }).addTo(map);
       polylineRef.current = poly;
-      map.fitBounds(poly.getBounds(), { padding: [35, 35] });
+      map.fitBounds(poly.getBounds(), { padding: [40, 40] });
     } else if (latLngs.length === 1) {
       map.setView(latLngs[0], 13);
     }
-  }, [markers, showRoute, selectedMarkerId]);
+  }, [markers, showRoute]);
+
+  // Handle selectedMarkerId changes without full re-render
+  useEffect(() => {
+    if (!selectedMarkerId || !mapRef.current) return;
+    const targetMarker = markerInstancesRef.current.get(selectedMarkerId);
+    if (targetMarker) {
+      const latLng = targetMarker.getLatLng();
+      mapRef.current.panTo(latLng, { animate: true, duration: 0.5 });
+      targetMarker.openPopup();
+    }
+  }, [selectedMarkerId]);
 
   return (
     <div className="relative w-full rounded-2xl overflow-hidden border border-border shadow-soft-md" style={{ height }}>
       <div ref={containerRef} className="w-full h-full" />
-      <div className="absolute top-3 right-3 z-[1000] bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border text-[11px] font-medium text-text flex items-center gap-1.5 shadow-soft-sm">
-        <span className="w-2 h-2 rounded-full bg-sage animate-pulse" />
-        <span>Demonstration Mode • Verified Geo-Coordinates</span>
+      <div className="absolute top-3 right-3 z-[1000] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-border text-[11px] font-semibold text-text flex items-center gap-1.5 shadow-soft-sm">
+        <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+        <span>MapTiler Engine • Verified Coordinates</span>
       </div>
     </div>
   );
