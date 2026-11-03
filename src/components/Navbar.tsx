@@ -154,7 +154,7 @@ export const Navbar: React.FC = () => {
                 }`}
               >
                 <User className="w-3.5 h-3.5" />
-                <span>{user.name.split(' ')[0]}</span>
+                <span>{(user.name || 'User').split(' ')[0]}</span>
               </Link>
               <button
                 onClick={logout}
